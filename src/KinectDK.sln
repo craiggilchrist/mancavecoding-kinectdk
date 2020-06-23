@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.30204.135
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Part 1 - Connecting", "Part 1 - Connecting\Part 1 - Connecting.csproj", "{F2793CD0-B727-4DAF-B224-3D75B72DA568}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{F2793CD0-B727-4DAF-B224-3D75B72DA568}.Debug|x64.ActiveCfg = Debug|x64
+		{F2793CD0-B727-4DAF-B224-3D75B72DA568}.Debug|x64.Build.0 = Debug|x64
+		{F2793CD0-B727-4DAF-B224-3D75B72DA568}.Release|x64.ActiveCfg = Release|x64
+		{F2793CD0-B727-4DAF-B224-3D75B72DA568}.Release|x64.Build.0 = Release|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {BC7FFEE2-4CC6-46B7-A3A7-EADC22E2C3E0}
+	EndGlobalSection
+EndGlobal
