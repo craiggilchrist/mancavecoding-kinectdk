@@ -25,15 +25,14 @@ namespace ManCaveCoding.KinectDK.Part1
 		#region Member vars
 
 		private Device _device;
-		private Transformation _transform;
+		private Transformation _transformation;
 		private int _colourWidth;
 		private int _colourHeight;
 		private int _depthWidth;
 		private int _depthHeight;
 		private SynchronizationContext _uiContext;
-		private WriteableBitmap _depthBitmap;
 		private WriteableBitmap _irBitmap;
-		private ImageSource _colourBitmap;
+		private ImageSource _bitmap;
 
 		#endregion Member vars
 
@@ -79,13 +78,12 @@ namespace ManCaveCoding.KinectDK.Part1
 			{
 				switch (SelectedOutput.OutputType)
 				{
-					case OutputType.Depth:
-						return _depthBitmap;
 					case OutputType.IR:
 						return _irBitmap;
 					default:
+					case OutputType.Depth:
 					case OutputType.Colour:
-						return _colourBitmap;
+						return _bitmap;
 				}
 			}
 		}
@@ -100,6 +98,8 @@ namespace ManCaveCoding.KinectDK.Part1
 			Task.WaitAny(Task.Delay(1000));
 			_device.StopImu();
 			_device.StopCameras();
+
+			_device.Dispose();
 		}
 
 		internal void StartCamera()
@@ -113,11 +113,11 @@ namespace ManCaveCoding.KinectDK.Part1
 
 			var configuration = new DeviceConfiguration
 			{
-				CameraFPS = FPS.FPS15,
-				ColorFormat = ImageFormat.ColorMJPG,
-				ColorResolution = ColorResolution.R720p,
-				DepthMode = DepthMode.NFOV_Unbinned,
-				SynchronizedImagesOnly = true
+				ColorFormat = ImageFormat.ColorBGRA32,
+				ColorResolution = ColorResolution.R1080p,
+				DepthMode = DepthMode.WFOV_2x2Binned,
+				SynchronizedImagesOnly = true,
+				CameraFPS = FPS.FPS30,
 			};
 
 			_device.StartCameras(configuration);
@@ -125,15 +125,13 @@ namespace ManCaveCoding.KinectDK.Part1
 			_device.StartImu();
 
 			var calibration = _device.GetCalibration(configuration.DepthMode, configuration.ColorResolution);
-			_transform = calibration.CreateTransformation();
+			_transformation = calibration.CreateTransformation();
 			_colourWidth = calibration.ColorCameraCalibration.ResolutionWidth;
 			_colourHeight = calibration.ColorCameraCalibration.ResolutionHeight;
 			_depthWidth = calibration.DepthCameraCalibration.ResolutionWidth;
 			_depthHeight = calibration.DepthCameraCalibration.ResolutionHeight;
 
 			_uiContext = SynchronizationContext.Current;
-
-			_depthBitmap = new WriteableBitmap(_colourWidth, _colourHeight, 96.0, 96.0, PixelFormats.Bgr565, BitmapPalettes.BlackAndWhiteTransparent);
 			_irBitmap = new WriteableBitmap(_depthWidth, _depthHeight, 192.0, 192.0, PixelFormats.Bgr555, null);
 
 			Task.Run(() => { ImuCapture(); });
@@ -146,85 +144,21 @@ namespace ManCaveCoding.KinectDK.Part1
 			{
 				try
 				{
-					using (Image transformedDepth = new Image(ImageFormat.Depth16, _colourWidth, _colourHeight, _colourWidth * sizeof(UInt16)))
 					using (var capture = _device.GetCapture())
 					{
 						switch (SelectedOutput.OutputType)
 						{
 							case OutputType.Depth:
-								_transform.DepthImageToColorCamera(capture, transformedDepth);
-								_uiContext.Send(x =>
-								{
-									_depthBitmap.Lock();
-
-									Image color = transformedDepth;
-
-									var region = new Int32Rect(0, 0, color.WidthPixels, color.HeightPixels);
-
-									unsafe
-									{
-										using (var pin = color.Memory.Pin())
-										{
-											_depthBitmap.WritePixels(region, (IntPtr)pin.Pointer, (int)color.Size, color.StrideBytes);
-										}
-									}
-
-									_depthBitmap.AddDirtyRect(region);
-									_depthBitmap.Unlock();
-								}, null);
+								PresentDepth(capture);
 								break;
 							case OutputType.IR:
-								using (var ms = new MemoryStream(capture.IR.Memory.ToArray()))
-								{
-									_uiContext.Send(x =>
-									{
-										_irBitmap.Lock();
-
-										var color = capture.IR;
-										var region = new Int32Rect(0, 0, color.WidthPixels, color.HeightPixels);
-
-										unsafe
-										{
-											using (var pin = color.Memory.Pin())
-											{
-												_irBitmap.WritePixels(region, (IntPtr)pin.Pointer, (int)color.Size, color.StrideBytes);
-											}
-										}
-
-										_irBitmap.AddDirtyRect(region);
-										_irBitmap.Unlock();
-									}, null);
-								}
+								PresentIR(capture);
 								break;
 							case OutputType.Colour:
 							default:
-								using (var ms = new MemoryStream(capture.Color.Memory.ToArray()))
-								{
-									_uiContext.Send(x =>
-									{
-										var bitmap = new System.Drawing.Bitmap(ms);
-
-										var bitmapData = bitmap.LockBits(
-											new System.Drawing.Rectangle(0, 0, bitmap.Width, bitmap.Height),
-											System.Drawing.Imaging.ImageLockMode.ReadOnly, bitmap.PixelFormat);
-
-										var bitmapSource = BitmapSource.Create(
-											bitmapData.Width, bitmapData.Height,
-											bitmap.HorizontalResolution, bitmap.VerticalResolution,
-											PixelFormats.Bgr24, null,
-											bitmapData.Scan0, bitmapData.Stride * bitmapData.Height, bitmapData.Stride);
-
-										bitmap.UnlockBits(bitmapData);
-
-										bitmapSource.Freeze();
-
-										_colourBitmap = bitmapSource;
-									}, null);
-								}
+								PresentColour(capture);
 								break;
 						}
-
-
 
 						PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("CurrentCameraImage"));
 					}
@@ -236,6 +170,101 @@ namespace ManCaveCoding.KinectDK.Part1
 				}
 			}
 
+		}
+
+		private void PresentColour(Capture capture)
+		{
+			using (var ms = new MemoryStream(capture.Color.Memory.ToArray()))
+			{
+				_uiContext.Send(x =>
+				{
+					_bitmap = capture.Color.CreateBitmapSource();
+					_bitmap.Freeze();
+				}, null);
+			}
+		}
+
+		private void PresentIR(Capture capture)
+		{
+			using (var ms = new MemoryStream(capture.IR.Memory.ToArray()))
+			{
+				_uiContext.Send(x =>
+				{
+					_irBitmap.Lock();
+
+					var color = capture.IR;
+					var region = new Int32Rect(0, 0, color.WidthPixels, color.HeightPixels);
+
+					unsafe
+					{
+						using (var pin = color.Memory.Pin())
+						{
+							_irBitmap.WritePixels(region, (IntPtr)pin.Pointer, (int)color.Size, color.StrideBytes);
+						}
+					}
+
+					_irBitmap.AddDirtyRect(region);
+					_irBitmap.Unlock();
+				}, null);
+			}
+		}
+
+		private void PresentDepth(Capture capture)
+		{
+			using (Image outputImage = new Image(ImageFormat.ColorBGRA32, _colourWidth, _colourHeight))
+			using (Image transformedDepth = new Image(ImageFormat.Depth16, _colourWidth, _colourHeight, _colourWidth * sizeof(UInt16)))
+			{
+				// Transform the depth image to the colour capera perspective.
+				_transformation.DepthImageToColorCamera(capture, transformedDepth);
+
+				_uiContext.Send(x =>
+				{
+					// Get the transformed pixels (colour camera perspective but depth pixels).
+					Span<ushort> depthBuffer = transformedDepth.GetPixels<ushort>().Span;
+
+					// Colour camera pixels.
+					Span<BGRA> colourBuffer = capture.Color.GetPixels<BGRA>().Span;
+
+					// What we'll output.
+					Span<BGRA> outputBuffer = outputImage.GetPixels<BGRA>().Span;
+
+					// Create a new image with data from the depth and colour image.
+					for (int i = 0; i < colourBuffer.Length; i++)
+					{
+						// We'll use the colour image if the depth is less than 1 metre. 
+						outputBuffer[i] = colourBuffer[i];
+						var depth = depthBuffer[i];
+
+						if (depth == 0) // No depth image.
+						{
+							outputBuffer[i].A = 0; // full transparent.
+						}
+
+						if (depth >= 1000 && depth < 1200) // More than a meter away.
+						{
+							outputBuffer[i].R = Convert.ToByte(255 - (255 / (depth - 999)));
+						}
+
+						if (depth >= 1200 && depth < 1500)
+						{
+							outputBuffer[i].G = Convert.ToByte(255 - (255 / (depth - 1199)));
+						}
+
+						if (depth >= 1500 && depth < 2000)
+						{
+							outputBuffer[i].B = Convert.ToByte(255 - (255 / (depth - 1499)));
+						}
+
+						if (depth >= 2000)
+						{
+							outputBuffer[i].Value = 0;
+						}
+					}
+
+					_bitmap = outputImage.CreateBitmapSource();
+					_bitmap.Freeze();
+				}, null);
+			}
 		}
 
 		private void ImuCapture()
