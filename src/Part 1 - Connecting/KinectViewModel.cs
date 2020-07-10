@@ -28,8 +28,6 @@ namespace ManCaveCoding.KinectDK.Part1
 		private Transformation _transformation;
 		private int _colourWidth;
 		private int _colourHeight;
-		private int _depthWidth;
-		private int _depthHeight;
 		private SynchronizationContext _uiContext;
 		private ImageSource _bitmap;
 
@@ -113,8 +111,6 @@ namespace ManCaveCoding.KinectDK.Part1
 			_transformation = calibration.CreateTransformation();
 			_colourWidth = calibration.ColorCameraCalibration.ResolutionWidth;
 			_colourHeight = calibration.ColorCameraCalibration.ResolutionHeight;
-			_depthWidth = calibration.DepthCameraCalibration.ResolutionWidth;
-			_depthHeight = calibration.DepthCameraCalibration.ResolutionHeight;
 
 			_uiContext = SynchronizationContext.Current;
 
@@ -156,23 +152,23 @@ namespace ManCaveCoding.KinectDK.Part1
 
 		}
 
-		private void PresentColour(Capture capture)
-		{
-			_uiContext.Send(x =>
+			private void PresentColour(Capture capture)
 			{
-				_bitmap = capture.Color.CreateBitmapSource();
-				_bitmap.Freeze();
-			}, null);
-		}
+				_uiContext.Send(x =>
+				{
+					_bitmap = capture.Color.CreateBitmapSource();
+					_bitmap.Freeze();
+				}, null);
+			}
 
-		private void PresentIR(Capture capture)
-		{
-			_uiContext.Send(x =>
+			private void PresentIR(Capture capture)
 			{
-				_bitmap = capture.IR.CreateBitmapSource();
-				_bitmap.Freeze();
-			}, null);
-		}
+				_uiContext.Send(x =>
+				{
+					_bitmap = capture.IR.CreateBitmapSource();
+					_bitmap.Freeze();
+				}, null);
+			}
 
 		private void PresentDepth(Capture capture)
 		{
