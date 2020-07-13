@@ -10,6 +10,7 @@ using System.ComponentModel;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Net.Http.Headers;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -76,7 +77,7 @@ namespace ManCaveCoding.KinectDK.Part3
 				new OutputOption{Name = "Brand recognition", OutputType = OutputType.BrandRecognition}
 			};
 
-			SelectedOutput = Outputs.First();
+			SelectedOutput = Outputs.Last();
 		}
 
 		#endregion Constructors
@@ -242,15 +243,30 @@ namespace ManCaveCoding.KinectDK.Part3
 					{
 						using (var frameStream = new MemoryStream())
 						{
-							capture.Color.CreateBitmap().ReduceSize().Save(frameStream, System.Drawing.Imaging.ImageFormat.Jpeg);
+							capture.Color.CreateBitmap().ReduceSize(0.5).Save(frameStream, System.Drawing.Imaging.ImageFormat.Jpeg);
 							frameStream.Position = 0;
-							//_customVisionClient.DetectImageUrlWithNoStore
 							var analysis = _customVisionClient.DetectImageWithNoStore(
 								_appSettings.ProjectId,
 								_appSettings.PublishedName,
 								frameStream);
 
 							_predictions = analysis.Predictions.Where(p => p.Probability > 0.6).ToList();
+
+							foreach (var prediction in _predictions)
+							{
+								AddOrUpdateDeviceData($"Brand: {prediction.TagName}", $"{Math.Round(prediction.Probability * 100)}%");
+							}
+
+							if (_predictions.Count() == 0)
+							{
+								foreach (var item in CameraDetails.Where(i => i.Name.StartsWith("Brand: ")).ToList())
+								{
+									_uiContext.Send(_ =>
+									{
+										CameraDetails.Remove(item);
+									}, null);
+								}
+							}
 						}
 					}
 					catch (Exception ex)
@@ -262,45 +278,48 @@ namespace ManCaveCoding.KinectDK.Part3
 				// Create a new image with data from the colour image and change the colour if brand is predicted in that region.
 				for (int i = 0; i < colourBuffer.Length; i++)
 				{
-					// We'll use the colour image if the depth is less than 1 metre. 
+					// We'll use the colour image if the pixel isn't inside a prediction bounding box.
 					outputBuffer[i] = colourBuffer[i];
-					var depth = depthBuffer[i];
+
+					//if (i < (1920 * (1080 / 2)))
+					//{
+					//	outputBuffer[i].R = 255;
+					//}
 				}
 
 				if (_predictions != null && _predictions.Count() > 0)
 				{
-					_uiContext.Send(x =>
+					foreach (var prediction in _predictions)
 					{
-						var writeableBitmap = new WriteableBitmap(outputImage.CreateBitmapSource());
-						writeableBitmap.Lock();
-						var h = writeableBitmap.PixelHeight;
-						var w = writeableBitmap.PixelWidth;
-						byte[,,] pixels = new byte[h, w, 4];
+						// Pixels to colour will start at the top left pixel and finish after the width plus height has been iterated.
+						var bbX = (int)Math.Round(prediction.BoundingBox.Left * _colourWidth);
+						var bbX2 = bbX + ((int)Math.Round(prediction.BoundingBox.Width * _colourWidth));
 
+						var bbY = (int)Math.Round(prediction.BoundingBox.Top * _colourHeight);
+						var bbY2 = bbY + ((int)Math.Round(prediction.BoundingBox.Height * _colourHeight));
 
-						foreach (var prediction in _predictions)
+						var region = new Int32Rect(
+							(int)(capture.Color.WidthPixels * prediction.BoundingBox.Left),
+							(int)(capture.Color.HeightPixels * prediction.BoundingBox.Top),
+							(int)(capture.Color.WidthPixels * prediction.BoundingBox.Width),
+							(int)(capture.Color.HeightPixels * prediction.BoundingBox.Height));
+
+						for (int x = region.X; x < region.X + region.Width; x++)
 						{
-							writeableBitmap.DrawRectangle(
-								Convert.ToInt32(Math.Round(w * prediction.BoundingBox.Left)),
-								Convert.ToInt32(Math.Round(h * prediction.BoundingBox.Top)),
-								Convert.ToInt32(Math.Round(w * prediction.BoundingBox.Width)),
-								Convert.ToInt32(Math.Round(h * prediction.BoundingBox.Height)),
-								System.Windows.Media.Color.FromArgb(50, 255, 0, 0));
+							for (int y = region.Y; y < region.Y + region.Height; y++)
+							{
+								outputBuffer[(x * y)].R = 255;
+							}
+							
 						}
+					}
+				}
 
-						writeableBitmap.Unlock();
-						_bitmap = writeableBitmap;
-						_bitmap.Freeze();
-					}, null);
-				}
-				else
+				_uiContext.Send(x =>
 				{
-					_uiContext.Send(x =>
-					{
-						_bitmap = outputImage.CreateBitmapSource();
-						_bitmap.Freeze();
-					}, null);
-				}
+					_bitmap = outputImage.CreateBitmapSource();
+					_bitmap.Freeze();
+				}, null);
 			}
 		}
 

@@ -93,7 +93,7 @@ namespace ManCaveCoding.KinectDK.Part3
 			return result;
 		}
 
-		public static void DrawRectangle(this WriteableBitmap writeableBitmap, int left, int top, int width, int height, Color color, int lineWidth = 3)
+		public static void DrawRectangle(this WriteableBitmap writeableBitmap, int left, int top, int width, int height, Color color, int lineStroke = 3)
 		{
 			// Compute the pixel's color
 			int colorData = color.A << 24; // A
@@ -115,7 +115,7 @@ namespace ManCaveCoding.KinectDK.Part3
 
 					for (int x = 0; x < width; x++)
 					{
-						if (x < lineWidth || x > (width - lineWidth) || y < lineWidth || y > (height - lineWidth))
+						if (x < lineStroke || x > (width - lineStroke) || y < lineStroke || y > (height - lineStroke))
 						{
 							// Assign the color data to the pixel
 							*((int*)pBackBuffer) = colorData;
