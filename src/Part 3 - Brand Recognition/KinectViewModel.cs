@@ -47,6 +47,8 @@ namespace ManCaveCoding.KinectDK.Part3
 		private Tracker _bodyTracker;
 		private ImageSource _bitmap;
 		private List<PredictionModel> _predictions;
+		private bool _applicationIsRunning = true;
+		private bool _pauseCollection = false;
 
 		private BGRA[] _bodyColours =
 		{
@@ -85,16 +87,20 @@ namespace ManCaveCoding.KinectDK.Part3
 		#region VM Properties
 
 		private OutputOption _selectedOutput;
-		private bool _applicationIsRunning = true;
 
 		public OutputOption SelectedOutput
 		{
 			get => _selectedOutput;
 			set
 			{
+				_pauseCollection = true;
+
+				Task.WaitAny(Task.Delay(1000));
+
 				CameraDetails.Clear();
 				_selectedOutput = value;
 				PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("SelectedOutput"));
+				_pauseCollection = false;
 			}
 		}
 
@@ -180,6 +186,11 @@ namespace ManCaveCoding.KinectDK.Part3
 			{
 				try
 				{
+					if (_pauseCollection)
+					{
+						continue;
+					}
+
 					using (var capture = _device.GetCapture())
 					{
 						_frameCount += 1;
@@ -252,11 +263,6 @@ namespace ManCaveCoding.KinectDK.Part3
 
 							_predictions = analysis.Predictions.Where(p => p.Probability > 0.6).ToList();
 
-							foreach (var prediction in _predictions)
-							{
-								AddOrUpdateDeviceData($"Brand: {prediction.TagName}", $"{Math.Round(prediction.Probability * 100)}%");
-							}
-
 							if (_predictions.Count() == 0)
 							{
 								foreach (var item in CameraDetails.Where(i => i.Name.StartsWith("Brand: ")).ToList())
@@ -280,11 +286,6 @@ namespace ManCaveCoding.KinectDK.Part3
 				{
 					// We'll use the colour image if the pixel isn't inside a prediction bounding box.
 					outputBuffer[i] = colourBuffer[i];
-
-					//if (i < (1920 * (1080 / 2)))
-					//{
-					//	outputBuffer[i].R = 255;
-					//}
 				}
 
 				if (_predictions != null && _predictions.Count() > 0)
@@ -304,16 +305,51 @@ namespace ManCaveCoding.KinectDK.Part3
 							(int)(capture.Color.WidthPixels * prediction.BoundingBox.Width),
 							(int)(capture.Color.HeightPixels * prediction.BoundingBox.Height));
 
-						for (int x = region.X; x < region.X + region.Width; x++)
+						for (int y = region.Y; y < region.Y + region.Height; y++)
 						{
-							for (int y = region.Y; y < region.Y + region.Height; y++)
+							for (int x = region.X; x < region.X + region.Width; x++)
 							{
-								outputBuffer[(x * y)].R = 255;
+								var index = (y * _colourWidth) + x;
+
+								var depthValueOfPixel = depthBuffer[index];
+
+								if (prediction.TagName.Equals("coca-cola", StringComparison.InvariantCultureIgnoreCase))
+								{
+									outputBuffer[index].R = 255;
+								}
+								if (prediction.TagName.Equals("fanta", StringComparison.InvariantCultureIgnoreCase))
+								{
+									outputBuffer[index].B = 255;
+								}
+								if (prediction.TagName.Equals("sprite", StringComparison.InvariantCultureIgnoreCase))
+								{
+									outputBuffer[index].G = 255;
+								}
 							}
-							
 						}
+
+						// Find the centre of the region captured.
+						var centerIndex = ((region.Y + (region.Height / 2)) * _colourWidth) + (region.X + (region.Height / 2));
+						var depthValue = depthBuffer[centerIndex];
+
+						AddOrUpdateDeviceData($"Brand: {prediction.TagName}", $"Distance: {depthValue}mm");
 					}
 				}
+
+				//for (int y = 0; y < 1920; y++)
+				//{
+				//	for (int x = 0; x < 1080; x++)
+				//	{
+				//		var index = (y * _colourWidth) + x;
+
+				//		if (y < 960)
+				//		{
+				//			outputBuffer[index].R = 255;
+				//			outputBuffer[index].G = 0;
+				//			outputBuffer[index].B = 0;
+				//		}
+				//	}
+				//}
 
 				_uiContext.Send(x =>
 				{
@@ -532,6 +568,16 @@ namespace ManCaveCoding.KinectDK.Part3
 			{
 				try
 				{
+					if (SelectedOutput.OutputType != OutputType.Colour)
+					{
+						continue;
+					}
+
+					if (_pauseCollection)
+					{
+						continue;
+					}
+
 					var imu = _device.GetImuSample();
 
 					AddOrUpdateDeviceData("Accelerometer: Timestamp", imu.AccelerometerTimestamp.ToString(@"hh\:mm\:ss"));
@@ -554,6 +600,11 @@ namespace ManCaveCoding.KinectDK.Part3
 
 		private void AddOrUpdateDeviceData(string key, string value)
 		{
+			if (_pauseCollection)
+			{
+				return;
+			}
+
 			var detail = CameraDetails.FirstOrDefault(i => i.Name == key);
 
 			if (detail == null)
